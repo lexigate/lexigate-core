@@ -1,0 +1,3 @@
+shift_type_id,name_ja,planned_start,planned_end,crosses_midnight,planned_break_minutes,source_ref
+DAY,日勤,09:00,18:00,false,60,synthetic:freee-like-shift
+NIGHT,夜勤,22:00,06:00,true,60,synthetic:freee-like-shift

@@ -1,0 +1,6 @@
+department_id,department_code,name_ja,parent_department_id,company_id,source_ref
+D000,HQ,全社,,C001,synthetic:org-root
+D100,SAL,営業部,D000,C001,hr-sample-v2/100k:departments#3(SAL)
+D200,ENG,開発部,D000,C001,hr-sample-v2/100k:departments#1(ENG)
+D300,HRS,人事部,D000,C001,hr-sample-v2/100k:departments#6(HRS)
+D400,FIN,経理部,D000,C001,hr-sample-v2/100k:departments#5(FIN)

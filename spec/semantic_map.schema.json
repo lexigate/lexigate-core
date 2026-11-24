@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/lexigate/lexigate-core/blob/main/spec/semantic_map.schema.json",
+  "title": "LexiGate semantic_map v0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "semantic_version",
+    "timezone"
+  ],
+  "properties": {
+    "semantic_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rule_version": {
+      "type": "string"
+    },
+    "data_label": {
+      "type": "string"
+    },
+    "data_label_ja": {
+      "type": "string"
+    },
+    "timezone": {
+      "type": "string",
+      "minLength": 1
+    },
+    "currency": {
+      "type": "string"
+    },
+    "money": {
+      "type": "string"
+    },
+    "time": {
+      "type": "object",
+      "properties": {
+        "cutoff_rule": {
+          "type": "string"
+        },
+        "cutoff_rule_ja": {
+          "type": "string"
+        },
+        "as_of_modes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "params": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "synonyms": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "example": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "base_date_source": {
+          "type": "string"
+        }
+      }
+    },
+    "intents": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "title_ja": {
+            "type": "string"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "requires_domain": {
+            "type": "string"
+          },
+          "requires_domain_any": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "params": {
+            "type": "object"
+          },
+          "synonyms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "terms": {
+      "type": "object"
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "definition": {
+            "type": "string"
+          },
+          "definition_ja": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "grain": {
+            "type": "string"
+          },
+          "measure": {
+            "type": "string"
+          },
+          "filter": {
+            "type": "string"
+          },
+          "also_counts": {
+            "type": "array"
+          },
+          "anomalies": {
+            "type": "object"
+          },
+          "reason_codes": {
+            "type": "object"
+          },
+          "unit": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "relations": {
+      "type": "object"
+    },
+    "permissions": {
+      "type": "object"
+    },
+    "evidence": {
+      "type": "object"
+    },
+    "rules": {
+      "type": "object"
+    },
+    "sql_guard": {
+      "$ref": "#/$defs/sql_guard"
+    },
+    "nl2sql_guard": {
+      "$ref": "#/$defs/sql_guard",
+      "description": "v0 alias for sql_guard"
+    }
+  },
+  "$defs": {
+    "sql_guard": {
+      "type": "object",
+      "properties": {
+        "statement": {
+          "type": "string"
+        },
+        "allowed_relations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowed_functions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters_required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "forbidden": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

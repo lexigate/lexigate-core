@@ -1,0 +1,4 @@
+period_id,month_start,month_end_exclusive,snapshot_cutoff_at,planned_close_at,status,source_ref
+2026-01,2026-01-01,2026-02-01,2026-01-31T15:00:00+00:00,2026-02-04T09:00:00+00:00,CLOSED,synthetic:close-calendar
+2026-02,2026-02-01,2026-03-01,2026-02-28T15:00:00+00:00,2026-03-04T09:00:00+00:00,CLOSING,synthetic:close-calendar
+2026-03,2026-03-01,2026-04-01,2026-03-31T15:00:00+00:00,2026-04-03T09:00:00+00:00,OPEN,synthetic:close-calendar

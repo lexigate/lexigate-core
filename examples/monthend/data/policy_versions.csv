@@ -1,0 +1,4 @@
+policy_version_id,policy_code,version,valid_from,valid_to,description_ja,params,source_ref
+TRAVEL-2025.04,TRAVEL_EXPENSE,2025.04,2025-04-01,2026-02-01,"出張旅費規程（2025年4月版）：日当2,000円、宿泊上限12,000円","{""per_diem_yen"": 2000, ""hotel_cap_yen"": 12000}",synthetic:policy
+TRAVEL-2026.02,TRAVEL_EXPENSE,2026.02,2026-02-01,,"出張旅費規程（2026年2月改定）：日当3,000円、宿泊上限15,000円","{""per_diem_yen"": 3000, ""hotel_cap_yen"": 15000}",synthetic:policy
+CLOSE-RULES-V1,MONTH_CLOSE,close-rules-v1,2026-01-01,,月結判定ルール v1：先月末時点＝基準日のJST月初（排他的上限）。承認済み＝締め時点前の最後の有効承認イベントが最終承認。未払い残高＝承認明細合計－締め時点前の確定支払（有効な取消を控除）。勤怠未確定＝日次勤怠なし・未締め・補正承認待ち。,"{""cutoff"": ""first_day_of_base_month_jst_exclusive"", ""timezone"": ""Asia/Tokyo"", ""currency"": ""JPY""}",synthetic:policy

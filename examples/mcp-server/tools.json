@@ -1,0 +1,27 @@
+{
+  "name": "lexigate-demo",
+  "version": "0.0.0",
+  "status": "skeleton \u2014 query execution is not implemented in this revision",
+  "tools": [
+    {
+      "name": "list_metrics",
+      "description": "List intents, metrics, and as-of modes from the loaded semantic_map."
+    },
+    {
+      "name": "resolve_intent",
+      "description": "Map a natural-language question to an intent and parameters, or to a clarification."
+    },
+    {
+      "name": "query_metric",
+      "description": "Run a catalog-covered metric, or a guarded generated SELECT if enabled."
+    },
+    {
+      "name": "get_evidence",
+      "description": "Return evidence for a previous answer, or SQL and rationale for a path-2 answer."
+    },
+    {
+      "name": "get_semantic_map",
+      "description": "Return the model-visible subset of the loaded semantic_map."
+    }
+  ]
+}

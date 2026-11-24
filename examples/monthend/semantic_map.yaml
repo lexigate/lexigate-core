@@ -1,0 +1,121 @@
+# Example semantic_map.yaml (v0) — fictional Japanese month-end close.
+# People and companies in the accompanying CSV data are fictitious.
+# This file is the public contract for the example, not the engine implementation.
+semantic_version: sem-2026.11.1
+rule_version: close-rules-v1
+data_label_ja: デモデータ
+timezone: Asia/Tokyo
+currency: JPY
+money: integer_yen            # never floating point
+
+time:
+  cutoff_rule_ja: 「先月末時点」＝基準日が属するJST月の月初0:00（排他的上限）。「X日時点」＝X日の翌日0:00 JST（排他的上限）。事象時刻はUTC保存、業務日付はJST。
+  as_of_modes:
+    previous_month_end: {params: [], synonyms: [先月末時点, 先月末, 前月末, 月末時点, 前月締め, last month end]}
+    month_end:          {params: [month], synonyms: [X月末時点, X月末], example: {month: "2026-01"}}
+    date:               {params: [date],  synonyms: [X月X日時点, その日時点, 当時, 履歴], example: {date: "2026-02-10"}}
+  base_date_source: server            # fixed demo date via LEXIGATE_BASE_DATE, never from the client
+
+intents:
+  unpaid_summary:
+    title_ja: 承認済み・未払いの出張精算（残高サマリー）
+    metric: unpaid_trip_balance
+    requires_domain: CLAIMS
+    params: {as_of: required, scope: optional, page: optional}
+    synonyms: [未払い, 未払残高, 未精算, 支払待ち, 承認済み未払い, いくら, 残高, unpaid, outstanding]
+  attendance_unconfirmed:
+    title_ja: 勤怠未確定の案件と確認担当
+    metric: attendance_unconfirmed
+    requires_domain_any: [CLAIMS, ATTENDANCE]    # ATTENDANCE-only viewers get no amounts / claim ids
+    params: {as_of: required, scope: optional, page: optional}
+    synonyms: [勤怠未確定, 勤怠が未確定, 未締め, 打刻漏れ, 補正待ち, 誰が確認, 確認担当, 勤怠]
+  claim_detail:
+    title_ja: 精算書の明細・承認・支払・勤怠日付の証跡
+    requires_domain: CLAIMS
+    params: {claim_id: required, as_of: required}
+    synonyms: [明細, 証跡, 詳細, 内訳, 承認履歴, 支払履歴, evidence]
+
+terms:   # Japanese business terms -> semantic definitions
+  承認済み: {maps_to: "last valid approval event before cutoff = FINAL_APPROVE", excludes: [段階承認のみ, 承認取消後, 差戻し中]}
+  未払い:   {maps_to: "balance_yen > 0 (approved line total - net settled payments before cutoff)"}
+  出張精算: {maps_to: "expense_claims.business_type = 'TRIP' AND trip_id IS NOT NULL"}
+  勤怠未確定: {maps_to: "trip work date (JST) with NO_SHIFT / NO_ATTENDANCE / NOT_CLOSED / CORRECTION_PENDING before cutoff"}
+  帰属部門: {maps_to: "primary assignment containing the trip start date (historical); does NOT grant view rights"}
+  現所属:   {maps_to: "primary assignment containing the server base date; used for department-manager visibility"}
+
+metrics:
+  unpaid_trip_balance:
+    definition_ja: 締め時点前に最終承認済みの出張精算について、承認明細合計－確定支払（有効な取消を控除）を精算書ごとに計算し、正の残高を合計する。
+    source: sem.claim_balance_at(:cutoff)
+    grain: claim
+    measure: sum(balance_yen)
+    filter: balance_yen > 0 AND anomaly_code IS NULL
+    also_counts: [count(claim_id), count(distinct employee_id)]
+    anomalies: {OVERPAID: 超過支払（財務が確認）, NO_LINES: 明細なし（財務が確認）}
+    unit: JPY
+  attendance_unconfirmed:
+    definition_ja: 未払い対象の出張精算について、出張期間内のJST勤務日ごとに勤怠の確定状況を判定する。全日承認休暇は除外、半日休暇は残り時間帯を確認対象とする。夜勤は始業日に帰属。
+    source: sem.attendance_issues_at(:cutoff)
+    grain: claim x work_date x reason
+    reason_codes:
+      NO_SHIFT:           {label_ja: シフト未登録（要確認）, responsible_role: 人事}
+      NO_ATTENDANCE:      {label_ja: 打刻・日次勤怠なし,     responsible_role: 本人}
+      NOT_CLOSED:         {label_ja: 日次勤怠が未締め,       responsible_role: 人事}
+      CORRECTION_PENDING: {label_ja: 勤怠補正の承認待ち,     responsible_role: 部門承認者}
+      PAYMENT_ANOMALY:    {label_ja: 支払状況の差異,         responsible_role: 財務}
+
+relations:   # semantic surface; each entry lists grain, key, date fields and allowed joins
+  sem.claim_balance_at:
+    grain: claim
+    key: [claim_id]
+    columns: {claim_id: text, employee_id: text, employee_number: text, employee_name_ja: text, trip_id: text, trip_start: date(JST),
+              trip_end: date(JST), attributed_department_id: text, attributed_department_ja: text, current_department_id: text,
+              final_approved_at: timestamptz, line_count: int, approved_total_yen: JPY, net_paid_yen: JPY, balance_yen: JPY, anomaly_code: text}
+    date_fields: [trip_start, trip_end, final_approved_at]
+    aggregatable: [approved_total_yen, net_paid_yen, balance_yen]
+    joins: {sem.attendance_issues_at: claim_id}
+  sem.attendance_issues_at:
+    grain: claim x work_date x reason
+    key: [claim_id, work_date, reason_code]
+    columns: {claim_id: text, employee_id: text, work_date: date(JST), reason_code: text, reason_ja: text, responsible_role: text,
+              evidence_id: text, claim_visible: bool, claim_unpaid: bool}
+    aggregatable: []
+    joins: {sem.claim_balance_at: claim_id}
+  sem.workday_status:   {grain: employee x work_date, key: [employee_id, work_date], note: status only (no clock times)}
+  sem.clock_workdays:   {grain: clock event, key: [clock_event_id], note: night shift -> start work date}
+
+permissions:   # enforced in PostgreSQL RLS (authz.*); the API also checks explicit scope requests
+  FINANCE:      {CLAIMS: authorized companies, ATTENDANCE: status only via sem.attendance_issues_at / sem.workday_status}
+  HR:           {ATTENDANCE: authorized employees (evidence), CLAIMS: none}
+  DEPT_MANAGER: {CLAIMS: employees whose CURRENT primary department is in the granted subtree, ATTENDANCE: same}
+  EMPLOYEE:     {CLAIMS: self, ATTENDANCE: self}
+  denied_message_ja: この情報へのアクセス権限がありません
+  rules:
+    - identity is required on every request; missing/unknown identity -> reject
+    - permissions are applied before aggregation (RLS inside the semantic functions)
+    - explicit request outside scope (department / employee / claim / evidence) -> denied, no amounts, existence not revealed
+    - implicit company-wide request by a narrower role -> computed on visible scope, response says the scope was limited
+    - past department attribution never grants current view rights
+
+evidence:
+  "CLM-<claim_id>:lines":     {domain: CLAIMS, fields: [line_no, transaction_date, category_ja, claimed_amount_yen, approved_amount_yen]}
+  "CLM-<claim_id>:approvals": {domain: CLAIMS, fields: [event_seq, occurred_at(JST), action, actor_role, stage, comment_ja], cutoff_applied: true}
+  "CLM-<claim_id>:payments":  {domain: CLAIMS, fields: [entry_id, entry_type, status, settled_at(JST), amount_yen, reverses_entry_id, counted]}
+  "CLM-<claim_id>:trip":      {domain: CLAIMS, fields: [trip_id, start_date, end_date, attributed_department, policy_version]}
+  "ATT-<employee_id>-<yyyymmdd>": {domain: ATTENDANCE (full) / CLAIMS (status only), fields: [shift, clocks(JST), attendance versions, corrections, leave]}
+  "RULE-<code>":              {domain: any authenticated, fields: [rule text, version]}
+
+rules:   # human-readable rule explanations returned as evidence RULE-<code>
+  CUTOFF: 先月末時点＝基準日のJST月初0:00を排他的上限とする。X日時点＝翌日0:00 JST。事象時刻はUTCで保存し、業務日付はAsia/Tokyoで判定。
+  APPROVAL: 締め時点より前の最後の有効な承認イベントが「最終承認」の精算のみを承認済みとする。段階承認のみ・承認取消後・差戻し中は除外。過去に承認された未払いの精算は継続して計上。
+  BALANCE: 明細の承認額と、締め時点前に確定した支払（有効な取消を控除）を、それぞれ精算書ごとに集計してから差し引く。日本円の整数で計算。超過支払と明細なしはデータ異常として別掲。
+  ATTRIBUTION: 部門帰属は出張開始日の主務部門。現在の閲覧権限は別途サーバーで判定し、過去の帰属は閲覧権限を与えない。
+  ATTENDANCE: 出張期間のJST勤務日ごとに、シフト未登録・日次勤怠なし・未締め・補正承認待ちを判定。全日承認休暇は除外、半日休暇は残り時間帯を確認。夜勤は始業日に帰属。
+  RESPONSIBILITY: 打刻なし→本人、補正承認待ち→部門承認者、未締め・シフト未登録→人事、支払差異→財務。
+
+sql_guard:   # allow list for path-2 (model-generated SQL); path 1 uses fixed parameterized queries
+  statement: single SELECT only
+  allowed_relations: [sem.claim_balance_at, sem.attendance_issues_at, sem.workday_status, sem.clock_workdays]
+  allowed_functions: [sum, count, min, max, coalesce, date_trunc, to_char]
+  parameters_required: [cutoff]
+  forbidden: [demo.*, authz.*, audit.*, meta.*, sample_raw*, pg_catalog.*, set_config, current_setting]

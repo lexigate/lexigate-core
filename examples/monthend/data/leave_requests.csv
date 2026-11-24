@@ -1,0 +1,5 @@
+event_id,leave_id,employee_id,work_date,unit,event_seq,status,occurred_at,source_ref
+LV-E0010-20260216-1,LV-E0010-20260216,E0010,2026-02-16,FULL,1,SUBMITTED,2026-02-10T01:00:00+00:00,synthetic:S6-attendance-exceptions
+LV-E0010-20260216-2,LV-E0010-20260216,E0010,2026-02-16,FULL,2,APPROVED,2026-02-11T01:00:00+00:00,synthetic:S6-attendance-exceptions
+LV-E0010-20260217-1,LV-E0010-20260217,E0010,2026-02-17,AM,1,SUBMITTED,2026-02-10T01:00:00+00:00,synthetic:S6-attendance-exceptions
+LV-E0010-20260217-2,LV-E0010-20260217,E0010,2026-02-17,AM,2,APPROVED,2026-02-11T01:00:00+00:00,synthetic:S6-attendance-exceptions

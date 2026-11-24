@@ -1,0 +1,16 @@
+LexiGate Core
+Copyright 2026 LexiGate contributors
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full text.
+
+The name "LexiGate" is a trademark. See TRADEMARKS.md.
+This license does not grant trademark rights (Apache License, Section 6).
+
+Third-party attribution
+-----------------------
+The fictional month-end demo dataset under examples/monthend/data/ uses
+synthetic records and fictitious Japanese names. A subset of structural
+identifiers was selected from the CC0-1.0 "HR Sample Database"
+(https://databasesample.com/datasets/hr-sample-database) and then re-keyed;
+the original sample database is not distributed in this repository.

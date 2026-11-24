@@ -1,0 +1,57 @@
+{
+  "label": "デモデータ（架空）— 実在の人物・企業とは関係ありません",
+  "data_version": "demo-20260310-v1+89265e3c0b",
+  "generator_version": "lexigate-gen-1.0.0",
+  "seed": 20260310,
+  "rule_version": "close-rules-v1",
+  "semantic_version": "sem-2026.11.1",
+  "base_date": "2026-03-10",
+  "coverage_start": "2025-12-31T15:00:00+00:00",
+  "coverage_end": "2026-03-09T15:00:00+00:00",
+  "coverage_jst": {
+    "from": "2026-01-01",
+    "to_inclusive": "2026-03-09"
+  },
+  "sources": {
+    "hr_sample": "https://databasesample.com/datasets/hr-sample-database (CC0-1.0, v2, tier 100k: employees/departments/companies selected)",
+    "synthetic": "generator/build.py (fixed seed); schema concepts calibrated on freee public specs"
+  },
+  "row_counts": {
+    "departments": 5,
+    "employees": 22,
+    "employment_assignments": 23,
+    "close_periods": 3,
+    "shift_types": 2,
+    "shift_assignments": 1495,
+    "clock_events": 1887,
+    "attendance_days": 925,
+    "attendance_corrections": 3,
+    "leave_requests": 4,
+    "policy_versions": 3,
+    "trip_requests": 29,
+    "expense_claims": 30,
+    "expense_lines": 62,
+    "claim_approval_events": 92,
+    "payment_entries": 17
+  },
+  "file_hashes": {
+    "departments.csv": "3cd5d6a8f9460d69d7746af6abc92d42d92c19fd9cc48edcb1238a50e023585b",
+    "employees.csv": "3236606eda701ecc20c01c57b222a6f3fc687e4826b819fdd577fee75b78e0d7",
+    "employment_assignments.csv": "d9c6e8a498cae3f02d479858735a2e6dc3b6a1d33c18de48b93f0ca17a844c9a",
+    "close_periods.csv": "f4b5bbce49e818cf7c519a8006f19859675d4f4ba7aee5bf287c7b012e6a3592",
+    "shift_types.csv": "eabcbe0c2f2173feeac0f3ad77f97c00fcb4a5188e2dad6c29322c29075673c8",
+    "shift_assignments.csv": "4871f7ce84c47cbc6d50a8c4ceae594d5779afd5c3a6532f797e1f9d39b4df39",
+    "clock_events.csv": "ec868c3a9973334eb675e113ba124f13aa2bc3219e6966db03c1188a2dfd69c1",
+    "attendance_days.csv": "65390bf02973b1afa426dba48f9cb79ec6630dff0e1991c2f0e7747b4c62169f",
+    "attendance_corrections.csv": "b67f95b5153dd96111e1157cba8980f1f7fb1498e3f9673d91396e671794fc90",
+    "leave_requests.csv": "6f34b1bf34bf561e9249dad9579a97404bacc3143e7a9361e9132aafc3933853",
+    "policy_versions.csv": "51a5ead193d499ad09d0a741865eb3e1a67b27a74d4dc6506b8a826a30713085",
+    "trip_requests.csv": "078175cc0b33ebe85706551c558b150a684c2c1f321f8a9abfcc0f5d31d1dd9c",
+    "expense_claims.csv": "f5f2f5b2d61a0f56e9a51254d6c8367bda388ba1ff0a6a6842a44ca543b181d1",
+    "expense_lines.csv": "5bc4c42b59ec661d1545f0cc501f17d05475d44535f96d4ebf7016c2bfc15dfe",
+    "claim_approval_events.csv": "0594e1e74647a39a2ecc7070291fc47e5a09a9bb7583f570f7265bdcf8bfe646",
+    "payment_entries.csv": "7df79aaa119259e75781a1e33caeb59f7e2a099ec2cd9d383e661c7e36af0355",
+    "expected.json": "7e700003076ba7f13c91c9cbd583ef8414376ef9d358308b9f418c5905154f99"
+  },
+  "note": "Fictional demo data. source_map.csv (internal key mapping to a CC0 sample) is not published."
+}

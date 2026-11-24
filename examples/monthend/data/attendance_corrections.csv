@@ -1,0 +1,4 @@
+event_id,correction_id,employee_id,work_date,event_seq,status,occurred_at,resulting_attendance_day_id,reason_ja,source_ref
+CR-E0010-20260219-1,CR-E0010-20260219,E0010,2026-02-19,1,SUBMITTED,2026-02-24T01:00:00+00:00,,退勤時刻の修正（客先対応で延長）,synthetic:S6-attendance-exceptions
+CR-E0011-20260212-1,CR-E0011-20260212,E0011,2026-02-12,1,SUBMITTED,2026-02-13T00:30:00+00:00,,退勤打刻漏れの補正,synthetic:S6-attendance-exceptions
+CR-E0011-20260212-2,CR-E0011-20260212,E0011,2026-02-12,2,APPROVED,2026-02-14T01:00:00+00:00,AD-E0011-20260212-v2,退勤打刻漏れの補正,synthetic:S6-attendance-exceptions

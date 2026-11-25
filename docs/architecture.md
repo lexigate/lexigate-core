@@ -92,9 +92,9 @@ Suggested follow-ups are a product feature, not a substitute for the catalog. Th
 
 Large language models are **bring your own model** (for example Amazon Bedrock or Azure OpenAI in the customer account, in-region). LexiGate does not take a cut of token spend and should not send raw row data to the model. Prompts may include synonyms, catalog excerpts, and the question.
 
-## Plugin-shaped core (Phase 1)
+## Plugin-shaped core
 
-The intended library boundaries (Phase 1). In 0.1 only two pieces exist as code: the scanner (`lexigate.scanner`, the core default behind `SchemaEnricher`) and the catalog-driven rules NLU (`lexigate.nlu.RulesNLU`). The answer engine also exposes an `AnswerPath` extension point (entry-point group `lexigate.answer_paths`) for the future path 2. The interfaces in the table are not yet published as stable APIs:
+The intended library boundaries (Phase 1). As of 0.2 these pieces exist as code: the scanner (`lexigate.scanner`, the core default behind `SchemaEnricher`), the catalog-driven rules NLU (`lexigate.nlu.RulesNLU`), the statement guard (`lexigate.sqlguard`, the core default behind `SQLGuardrail`), path 2 (`lexigate.generated.GeneratedSQLPath`) with pluggable model providers (`lexigate.llm`: Gemini, OpenAI-compatible), and the `AnswerPath` extension point (entry-point group `lexigate.answer_paths`). The interfaces in the table are not yet published as stable APIs:
 
 | Interface | Core default | Enterprise plug-in (private) |
 |---|---|---|
@@ -111,8 +111,8 @@ Enterprise code depends on core; core never depends on enterprise. Plug-ins are 
 
 - A runnable gateway, Teams bot, Slack adapter, or Copilot package.
 - Database RLS policies, production SQL functions, or NLU prompt chains.
-- A working MCP server (skeleton only), model-generated SQL (path 2), or the plugin interfaces below.
+- Stable plugin interfaces (the table above is the design, not a published API).
 
-Since 0.1 the repository does contain `lexigate scan`, a demo-only ask service with fixed queries and rules-based NLU, and demo semantic functions (schema `sem`, no RLS) for the fictional dataset. See the README Quickstart.
+The repository does contain `lexigate scan`, a demo-only ask service with fixed queries and rules-based NLU, optional guarded model-generated SQL (path 2, bring your own key), a demo-only MCP server (`lexigate mcp`), and demo semantic functions (schema `sem`, no RLS) for the fictional dataset. See the README Quickstart.
 
 Those items are either Phase 1 work in this repository or private enterprise / demo work. Please treat anything that looks like a complete product in this revision as a documentation error and file an issue.

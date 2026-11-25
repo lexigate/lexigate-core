@@ -5,6 +5,8 @@
 -- bound, timestamptz) so the same definition serves month-end and historical as-of questions.
 -- This open-core version has NO row-level security: the quickstart answers company-wide on fictional data.
 -- (Entra-based RLS / CLS is an enterprise plug-in and is not part of lexigate-core.)
+-- The functions are SECURITY DEFINER with a fixed search_path, so the low-privilege role `lexigate_query`
+-- (used for model-generated SQL, see 50_query_role.sql) can call them without any access to schema `demo`.
 SET check_function_bodies = off;
 DROP SCHEMA IF EXISTS sem CASCADE;
 CREATE SCHEMA sem;
@@ -12,7 +14,7 @@ CREATE SCHEMA sem;
 -- Approval state: last VALID approval event strictly before the cutoff (ties broken by event_seq).
 CREATE FUNCTION sem.claim_status_at(p_cutoff timestamptz)
 RETURNS TABLE(claim_id text, last_action text, last_event_at timestamptz, last_event_id text)
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, sem, demo AS $$
   SELECT DISTINCT ON (e.claim_id) e.claim_id, e.action, e.occurred_at, e.event_id
   FROM demo.claim_approval_events e
   WHERE e.is_valid AND e.occurred_at < p_cutoff
@@ -27,7 +29,7 @@ RETURNS TABLE(claim_id text, employee_id text, employee_number text, employee_na
               trip_start date, trip_end date, attributed_department_id text, attributed_department_ja text,
               current_department_id text, final_approved_at timestamptz, line_count integer,
               approved_total_yen bigint, net_paid_yen bigint, balance_yen bigint, anomaly_code text)
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, sem, demo AS $$
   WITH st AS (
     SELECT s.claim_id, s.last_event_at FROM sem.claim_status_at(p_cutoff) s WHERE s.last_action = 'FINAL_APPROVE'
   ), c AS (
@@ -74,7 +76,7 @@ $$;
 CREATE FUNCTION sem.attendance_issues_at(p_cutoff timestamptz)
 RETURNS TABLE(claim_id text, employee_id text, work_date date, reason_code text, reason_ja text,
               responsible_role text, evidence_id text, claim_visible boolean, claim_unpaid boolean)
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, sem, demo AS $$
   WITH b AS (
     SELECT * FROM sem.claim_balance_at(p_cutoff)
   ), d AS (
@@ -113,7 +115,7 @@ $$;
 -- Evidence for one claim as of the cutoff: lines, approval events and payment entries in one tagged row set.
 CREATE FUNCTION sem.claim_evidence_at(p_claim_id text, p_cutoff timestamptz)
 RETURNS TABLE(kind text, seq integer, occurred_at timestamptz, label_ja text, amount_yen bigint, detail jsonb)
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, sem, demo AS $$
   SELECT 'claim', 0, c.submitted_at, c.title_ja, NULL::bigint,
          jsonb_build_object('employee_id', c.employee_id, 'employee_name_ja', e.display_name_ja, 'trip_id', c.trip_id,
                             'business_type', c.business_type, 'policy_version_id', c.policy_version_id)
@@ -137,8 +139,43 @@ LANGUAGE sql STABLE AS $$
   ORDER BY 1, 2
 $$;
 
+-- Status-only view of one work date (no clock times).
+CREATE FUNCTION sem.workday_status(p_employee text, p_date date, p_cutoff timestamptz)
+RETURNS TABLE(employee_id text, work_date date, day_type text, shift_type_ja text, attendance_status text,
+              attendance_version integer, full_day_leave boolean, half_day_leave text, correction_pending boolean)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, sem, demo AS $$
+  SELECT p_employee, p_date, sa.day_type, st.name_ja,
+         ad.status, ad.version,
+         COALESCE(lv.unit = 'FULL' AND lv.status = 'APPROVED', false),
+         CASE WHEN lv.status = 'APPROVED' AND lv.unit IN ('AM','PM') THEN lv.unit END,
+         EXISTS (SELECT 1 FROM (SELECT DISTINCT ON (ac.correction_id) ac.status FROM demo.attendance_corrections ac
+                                WHERE ac.employee_id = p_employee AND ac.work_date = p_date AND ac.occurred_at < p_cutoff
+                                ORDER BY ac.correction_id, ac.occurred_at DESC, ac.event_seq DESC) z WHERE z.status = 'SUBMITTED')
+  FROM (SELECT 1) one
+  LEFT JOIN demo.shift_assignments sa ON sa.employee_id = p_employee AND sa.work_date = p_date
+  LEFT JOIN demo.shift_types st ON st.shift_type_id = sa.shift_type_id
+  LEFT JOIN LATERAL (SELECT a.status, a.version FROM demo.attendance_days a
+                     WHERE a.employee_id = p_employee AND a.work_date = p_date AND a.effective_at < p_cutoff
+                     ORDER BY a.effective_at DESC, a.version DESC LIMIT 1) ad ON true
+  LEFT JOIN LATERAL (SELECT DISTINCT ON (l.leave_id) l.status, l.unit FROM demo.leave_requests l
+                     WHERE l.employee_id = p_employee AND l.work_date = p_date AND l.occurred_at < p_cutoff
+                     ORDER BY l.leave_id, l.occurred_at DESC, l.event_seq DESC LIMIT 1) lv ON true
+$$;
+
+-- Clock events with the work date they belong to (night shift -> the start work date via shift assignment).
+CREATE FUNCTION sem.clock_workdays()
+RETURNS TABLE(clock_event_id text, employee_id text, direction text, occurred_at timestamptz, occurred_jst timestamp, work_date date)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, sem, demo AS $$
+  SELECT ce.clock_event_id, ce.employee_id, ce.direction, ce.occurred_at, ce.occurred_at AT TIME ZONE 'Asia/Tokyo',
+         COALESCE(sa.work_date, (ce.occurred_at AT TIME ZONE 'Asia/Tokyo')::date)
+  FROM demo.clock_events ce LEFT JOIN demo.shift_assignments sa ON sa.shift_assignment_id = ce.shift_assignment_id
+$$;
+
 COMMENT ON SCHEMA sem IS 'セマンティック層。締め時点（排他的上限）を引数に取る関数で指標を定義する（デモ：行レベル権限なし）';
 COMMENT ON FUNCTION sem.claim_status_at(timestamptz) IS '精算書の承認状態（締め時点前の最後の有効な承認アクション）';
 COMMENT ON FUNCTION sem.claim_balance_at(timestamptz, date) IS '承認済み出張精算の未払い残高（精算書単位）。balance_yen=承認明細合計－確定支払（有効な取消を控除）、anomaly_code=OVERPAID/NO_LINES/NULL';
 COMMENT ON FUNCTION sem.attendance_issues_at(timestamptz) IS '勤怠未確定の判定（精算書×勤務日×理由）。NO_SHIFT/NO_ATTENDANCE/NOT_CLOSED/CORRECTION_PENDING と確認担当';
 COMMENT ON FUNCTION sem.claim_evidence_at(text, timestamptz) IS '精算書1件の証跡（明細・承認履歴・支払）。締め時点前のもののみ';
+COMMENT ON FUNCTION sem.workday_status(text, date, timestamptz) IS '勤務日の状態（打刻時刻を含まない状態のみ）。day_type、shift_type_ja、attendance_status（OPEN/CLOSED/NULL）、休暇、補正承認待ち';
+COMMENT ON FUNCTION sem.clock_workdays() IS '打刻と帰属勤務日（夜勤の退勤打刻は始業日に帰属）';
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA sem FROM PUBLIC;

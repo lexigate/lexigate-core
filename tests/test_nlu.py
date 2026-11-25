@@ -39,3 +39,15 @@ def test_department_and_claim(nlu):
     p = nlu.parse("営業部の未払い出張精算はいくら？", BASE)
     assert p.department == "営業部"
     assert nlu.parse("ｃ１００１の証跡", BASE).claim_id == "C1001"
+
+
+@pytest.mark.parametrize("q", ["確認：さっきの SQL と根拠は？", "さっきのSQLを見せて", "SQLと根拠は？", "show me the SQL"])
+def test_confirm_sql(nlu, q):
+    assert nlu.parse(q, BASE).intent == "confirm_sql"
+
+
+def test_breakdown_and_domain(nlu):
+    p = nlu.parse("部門別の未払い残高は？", BASE)
+    assert "breakdown" in p.notes and p.in_domain and p.intent == "unpaid_summary"
+    assert not nlu.parse("今日の天気は？", BASE).in_domain
+    assert not nlu.parse("来月の給与はいくら？", BASE).in_domain

@@ -5,15 +5,19 @@
 Path 1 (`FixedQueryPath`, implemented here) binds intents from the semantic_map to fixed, parameterized
 queries over the `sem` relations. Nothing else is executed.
 
-Extension point for path 2 (model-generated SQL, not implemented in lexigate-core 0.1): any object that
-implements `AnswerPath` can be appended to `Engine.paths`, or published as a plug-in under the entry-point
-group ``lexigate.answer_paths``. The engine tries paths in order and returns the first answer. A path-2
-implementation must call `Answer.mark_generated()`, which adds the soft footer and the "show me the SQL"
-suggestion described in the README (Dual-path answering).
+Path 2 (`lexigate.generated.GeneratedSQLPath`) is added after path 1 when an LLM provider is configured
+(see `lexigate.llm`); without a key it is absent. Any other object implementing `AnswerPath` can be appended to
+`Engine.paths` or published under the entry-point group ``lexigate.answer_paths``. The engine tries paths in
+order and returns the first answer. A path-2 answer calls `Answer.mark_generated()`, which adds the soft footer
+and the "show me the SQL" suggestion described in the README (Dual-path answering). The SQL and the semantic
+definitions behind it stay on the server and are returned only when the user asks for them in the same session.
 """
 from __future__ import annotations
 
 import os
+import threading
+import uuid
+from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta
 from importlib.metadata import entry_points
@@ -47,17 +51,23 @@ class Answer:
     semantic_version: str | None = None
     data_label: str | None = None
     nlu: dict = field(default_factory=dict)
+    query_id: str | None = None
+    session_id: str | None = None
+    sql_available: bool = False
+    rationale: dict | None = field(default=None, repr=False)     # server-side only (SQL + definitions)
 
     def mark_generated(self) -> "Answer":
-        """For path-2 plug-ins: soft red footer + one extra suggestion to reveal the SQL and its basis."""
-        self.ai_generated, self.path = True, "generated"
+        """Path 2: soft red footer + one extra suggestion to reveal the SQL and its basis."""
+        self.ai_generated, self.path, self.sql_available = True, "generated", True
         self.footer_ja = GENERATED_FOOTER_JA
         if CONFIRM_HINT_JA not in self.hints:
             self.hints = self.hints[:2] + [CONFIRM_HINT_JA]
         return self
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d.pop("rationale", None)                 # never sent with the answer
+        return d
 
 
 class AnswerPath(Protocol):
@@ -73,6 +83,7 @@ class Context:
     base: date
     dsn: str
     tz: ZoneInfo
+    generated_enabled: bool = False
 
     def connect(self) -> psycopg.Connection:
         cx = psycopg.connect(self.dsn, autocommit=True, row_factory=dict_row)
@@ -135,6 +146,8 @@ class FixedQueryPath:
         fn = self.handlers.get(parsed.intent or "")
         if not fn:
             return None
+        if "breakdown" in parsed.notes and ctx.generated_enabled:
+            return None          # 「部門別」「上位」… are not covered by the fixed query; let path 2 try
         m = ctx.semantic_map
         as_of_req = parsed.as_of
         assumed = False
@@ -286,18 +299,100 @@ def plugin_paths(semantic_map: dict) -> list[AnswerPath]:
     return out
 
 
+def _default_paths(semantic_map: dict, llm) -> list[AnswerPath]:
+    paths: list[AnswerPath] = [FixedQueryPath(semantic_map)]
+    if llm == "auto":
+        from lexigate.llm import provider_from_env
+        llm = provider_from_env()
+    if llm is not None:
+        from lexigate.generated import GeneratedSQLPath, GenerationDisabled
+        try:
+            paths.append(GeneratedSQLPath(semantic_map, llm))
+        except GenerationDisabled:
+            pass
+    return paths + plugin_paths(semantic_map)
+
+
 class Engine:
+    """Thread-safe. Keeps, per session, the id of the last answer, and per answer (bounded LRU) what is
+    needed to explain it later. Nothing is persisted."""
+
+    MAX_SESSIONS = 1000
+    MAX_ANSWERS = 2000
+
     def __init__(self, semantic_map: dict, dsn: str, base: date, nlu: NLU | None = None,
-                 paths: list[AnswerPath] | None = None):
+                 paths: list[AnswerPath] | None = None, llm: Any = None):
         tz = ZoneInfo(semantic_map.get("timezone", "Asia/Tokyo"))
         self.ctx = Context(semantic_map, base, dsn, tz)
         self.nlu = nlu or RulesNLU(semantic_map)
-        self.paths: list[AnswerPath] = paths if paths is not None else [FixedQueryPath(semantic_map), *plugin_paths(semantic_map)]
+        self.paths: list[AnswerPath] = paths if paths is not None else _default_paths(semantic_map, llm)
+        self.ctx.generated_enabled = any(getattr(p, "name", "") == "generated" for p in self.paths)
+        self._lock = threading.Lock()
+        self._sessions: OrderedDict[str, str] = OrderedDict()
+        self._answers: OrderedDict[str, dict] = OrderedDict()
 
-    def ask(self, question: str) -> Answer:
+    # -------------------------------------------------------------- state
+    def _remember(self, a: Answer, session_id: str | None) -> None:
+        with self._lock:
+            self._answers[a.query_id] = {"path": a.path, "ai_generated": a.ai_generated, "rationale": a.rationale,
+                                         "intent": a.intent, "as_of": a.as_of}
+            while len(self._answers) > self.MAX_ANSWERS:
+                self._answers.popitem(last=False)
+            if session_id:
+                self._sessions[session_id] = a.query_id
+                self._sessions.move_to_end(session_id)
+                while len(self._sessions) > self.MAX_SESSIONS:
+                    self._sessions.popitem(last=False)
+
+    def last_query_id(self, session_id: str | None) -> str | None:
+        with self._lock:
+            return self._sessions.get(session_id) if session_id else None
+
+    def evidence(self, query_id: str | None) -> dict:
+        """SQL and rationale of a previous path-2 answer (MCP get_evidence kind=sql_and_rationale)."""
+        with self._lock:
+            rec = self._answers.get(query_id or "")
+        if not rec:
+            return {"status": "not_found", "message": "回答が見つかりません（期限切れ、または別のセッション）。"}
+        if not rec["ai_generated"] or not rec["rationale"]:
+            msg = ("直前の回答は定型クエリ（セマンティック層の固定クエリ）による回答で、AI 生成の SQL はありません。"
+                   if rec["path"] == "fixed" else "直前の回答には SQL がありません。")
+            return {"status": "not_applicable", "path": rec["path"], "message": msg}
+        return {"status": "ok", "query_id": query_id, **rec["rationale"]}
+
+    def _confirm_answer(self, session_id: str | None) -> Answer:
+        qid = self.last_query_id(session_id)
+        ev = self.evidence(qid)
+        if ev["status"] != "ok":
+            text = ev["message"] if qid else "直前の回答が見つかりません。先に質問してください。"
+            return Answer("evidence", text, intent="confirm_sql", data={"status": ev["status"], "query_id": qid},
+                          hints=STARTER_HINTS[:2])
+        lines = ["直前の回答（AI 作成）の SQL と根拠です。", "【SQL】", ev["sql"],
+                 f"【時点】{ev['as_of']['label_ja']}（:cutoff = {ev['as_of']['cutoff']}、この時刻より前のデータ）"]
+        for name, r in ev["relations"].items():
+            lines.append(f"【参照したリレーション】{r.get('call', name)}（粒度：{r.get('grain', '—')}）")
+        for name, mt in ev["metrics"].items():
+            lines.append(f"【口径】{name}：{mt.get('definition_ja') or mt.get('definition', '')}"
+                         + (f"（条件：{mt['filter']}）" if mt.get("filter") else ""))
+        for k, t in ev["terms"].items():
+            lines.append(f"【用語】{k} = {t.get('maps_to') if isinstance(t, dict) else t}")
+        for k, r in ev["rules"].items():
+            lines.append(f"【ルール {k}】{r}")
+        if ev.get("basis_ja"):
+            lines.append(f"【AI の説明】{ev['basis_ja']}")
+        return Answer("evidence", "\n".join(lines), intent="confirm_sql",
+                      data={"status": "ok", "query_id": qid, "sql": ev["sql"], "relations": ev["relations"],
+                            "metrics": ev["metrics"], "terms": ev["terms"], "rules": ev["rules"],
+                            "basis_ja": ev.get("basis_ja"), "model": ev.get("model")},
+                      hints=STARTER_HINTS[:2])
+
+    # -------------------------------------------------------------- ask
+    def ask(self, question: str, session_id: str | None = None) -> Answer:
         m = self.ctx.semantic_map
         parsed = self.nlu.parse(question, self.ctx.base)
-        if parsed.intent == "help":
+        if parsed.intent == "confirm_sql":
+            a = self._confirm_answer(session_id)
+        elif parsed.intent == "help":
             a = Answer("help", HELP_JA, intent="help", hints=STARTER_HINTS[:2])
         else:
             a = None
@@ -312,10 +407,15 @@ class Engine:
         a.nlu = {"source": parsed.source, "intent": parsed.intent, "confidence": parsed.confidence,
                  **({"department": parsed.department} if parsed.department else {}),
                  **({"claim_id": parsed.claim_id} if parsed.claim_id else {})}
+        a.query_id = uuid.uuid4().hex[:16]
+        a.session_id = session_id
+        if a.path != "evidence":                 # the follow-up keeps pointing at the answer it explains
+            self._remember(a, session_id)
         return a
 
     def health(self) -> dict[str, Any]:
         with self.ctx.connect() as cx:
             cx.execute("SELECT 1").fetchone()
         return {"ok": True, "base_date": self.ctx.base.isoformat(),
-                "semantic_version": self.ctx.semantic_map.get("semantic_version")}
+                "semantic_version": self.ctx.semantic_map.get("semantic_version"),
+                "generated_sql": self.ctx.generated_enabled}

@@ -201,6 +201,13 @@
           },
           "review": {
             "$ref": "#/$defs/review"
+          },
+          "call": {
+            "type": "string",
+            "description": "How a query calls the relation, e.g. sem.claim_balance_at(:cutoff). Shown to the SQL generator."
+          },
+          "note": {
+            "type": "string"
           }
         }
       }

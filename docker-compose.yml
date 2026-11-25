@@ -4,6 +4,9 @@
 # Quickstart:  docker compose up --build
 # Then:        curl -s localhost:8080/v1/ask -H 'Content-Type: application/json' -d '{"question":"未払い出張精算はいくら？"}'
 #   or:        pip install -e . && lexigate ask "未払い出張精算はいくら？"
+# MCP over streamable HTTP (optional):  docker compose --profile mcp up --build  ->  http://127.0.0.1:8090/mcp
+# Model-generated SQL (optional): export GEMINI_API_KEY (or OPENAI_API_KEY) in your shell before `up`;
+#   without a key only the fixed queries run. Keys are passed through from the host, never stored here.
 #
 # Local demo only. The database contains fictional data, the password below is a throwaway demo value,
 # and the ask service has no authentication. Do not point it at a real database.
@@ -28,7 +31,7 @@ services:
 
   ask:
     build: .
-    image: lexigate-core:0.1.0
+    image: lexigate-core:0.2.0
     depends_on:
       db:
         condition: service_healthy
@@ -36,8 +39,33 @@ services:
       LEXIGATE_DSN: postgresql://lexigate@db:5432/lexigate_demo
       PGPASSWORD: lexigate-demo             # throwaway demo value (same as POSTGRES_PASSWORD above)
       LEXIGATE_BASE_DATE: "2026-03-10"      # fixed demo "today" so 先月末時点 = end of February 2026
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LEXIGATE_OPENAI_BASE_URL: ${LEXIGATE_OPENAI_BASE_URL:-}
+      LEXIGATE_LLM_PROVIDER: ${LEXIGATE_LLM_PROVIDER:-auto}
     ports:
       - "127.0.0.1:8080:8080"
+
+  mcp:
+    profiles: ["mcp"]
+    image: lexigate-core:0.2.0
+    build: .
+    depends_on:
+      ask:
+        condition: service_healthy          # the ask service loads the demo data first
+    environment:
+      LEXIGATE_DSN: postgresql://lexigate@db:5432/lexigate_demo
+      PGPASSWORD: lexigate-demo
+      LEXIGATE_BASE_DATE: "2026-03-10"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LEXIGATE_OPENAI_BASE_URL: ${LEXIGATE_OPENAI_BASE_URL:-}
+      LEXIGATE_LLM_PROVIDER: ${LEXIGATE_LLM_PROVIDER:-auto}
+    command: ["lexigate", "mcp", "--transport", "http", "--host", "0.0.0.0", "--port", "8090"]
+    healthcheck:
+      disable: true
+    ports:
+      - "127.0.0.1:8090:8090"
 
 volumes:
   lexigate-pgdata:

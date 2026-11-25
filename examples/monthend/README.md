@@ -14,6 +14,6 @@ All people, departments, and the company name in this dataset are **fictitious**
 - [`data/`](data/) — CSV files plus `expected.json` (independent reference totals) and `manifest.json` (row counts and SHA-256 hashes).
 - [`generator/`](generator/) — optional source of the CSVs; see its README. Regeneration depends on a third-party CC0 sample that is not shipped here.
 
-Since version 0.1, `docker compose up` (or `lexigate demo load`) loads these CSVs into PostgreSQL schema `demo`, creates the semantic functions in schema `sem`, and serves `lexigate ask` on top of them. See the [Quickstart](../../README.md#quickstart-01). The tests check every answer against `expected.json`.
+Since version 0.1, `docker compose up` (or `lexigate demo load`) loads these CSVs into PostgreSQL schema `demo`, creates the semantic functions in schema `sem`, and serves `lexigate ask` on top of them. See the [Quickstart](../../README.md#quickstart). The tests check every answer against `expected.json`.
 
 A typical path-1 question on this dataset is: 「先月末時点の承認済み未払い出張精算の合計は？」

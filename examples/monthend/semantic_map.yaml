@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 LexiGate contributors
 # Example semantic_map.yaml (v0) — fictional Japanese month-end close.
 # People and companies in the accompanying CSV data are fictitious.
 # This file is the public contract for the example, not the engine implementation.
@@ -66,8 +68,9 @@ metrics:
       CORRECTION_PENDING: {label_ja: 勤怠補正の承認待ち,     responsible_role: 部門承認者}
       PAYMENT_ANOMALY:    {label_ja: 支払状況の差異,         responsible_role: 財務}
 
-relations:   # semantic surface; each entry lists grain, key, date fields and allowed joins
+relations:   # semantic surface; each entry lists how to call it, grain, key, date fields and allowed joins
   sem.claim_balance_at:
+    call: sem.claim_balance_at(:cutoff)
     grain: claim
     key: [claim_id]
     columns: {claim_id: text, employee_id: text, employee_number: text, employee_name_ja: text, trip_id: text, trip_start: date(JST),
@@ -77,6 +80,7 @@ relations:   # semantic surface; each entry lists grain, key, date fields and al
     aggregatable: [approved_total_yen, net_paid_yen, balance_yen]
     joins: {sem.attendance_issues_at: claim_id}
   sem.attendance_issues_at:
+    call: sem.attendance_issues_at(:cutoff)
     grain: claim x work_date x reason
     key: [claim_id, work_date, reason_code]
     columns: {claim_id: text, employee_id: text, work_date: date(JST), reason_code: text, reason_ja: text, responsible_role: text,
@@ -84,12 +88,24 @@ relations:   # semantic surface; each entry lists grain, key, date fields and al
     aggregatable: []
     joins: {sem.claim_balance_at: claim_id}
   sem.claim_evidence_at:   # (claim_id, cutoff) -> lines, approval events and settled payments of one claim
+    call: sem.claim_evidence_at('<claim_id>', :cutoff)
     grain: claim x evidence item
     key: [kind, seq]
     columns: {kind: text, seq: int, occurred_at: timestamptz, label_ja: text, amount_yen: JPY, detail: jsonb}
     note: evidence for claim_detail (CLM-<claim_id>:lines / :approvals / :payments)
-  sem.workday_status:   {grain: employee x work_date, key: [employee_id, work_date], note: status only (no clock times)}
-  sem.clock_workdays:   {grain: clock event, key: [clock_event_id], note: night shift -> start work date}
+  sem.workday_status:
+    call: sem.workday_status('<employee_id>', '<work_date>'::date, :cutoff)
+    grain: employee x work_date
+    key: [employee_id, work_date]
+    columns: {employee_id: text, work_date: date(JST), day_type: text, shift_type_ja: text, attendance_status: text,
+              attendance_version: int, full_day_leave: bool, half_day_leave: text, correction_pending: bool}
+    note: status only (no clock times); one row for one employee and date
+  sem.clock_workdays:
+    call: sem.clock_workdays()
+    grain: clock event
+    key: [clock_event_id]
+    columns: {clock_event_id: text, employee_id: text, direction: text, occurred_at: timestamptz, occurred_jst: timestamp, work_date: date(JST)}
+    note: night shift -> start work date; filter occurred_at < :cutoff yourself
 
 permissions:   # enforced in PostgreSQL RLS (authz.*); the API also checks explicit scope requests
   FINANCE:      {CLAIMS: authorized companies, ATTENDANCE: status only via sem.attendance_issues_at / sem.workday_status}
@@ -123,6 +139,6 @@ rules:   # human-readable rule explanations returned as evidence RULE-<code>
 sql_guard:   # allow list for path-2 (model-generated SQL); path 1 uses fixed parameterized queries
   statement: single SELECT only
   allowed_relations: [sem.claim_balance_at, sem.attendance_issues_at, sem.workday_status, sem.clock_workdays]
-  allowed_functions: [sum, count, min, max, coalesce, date_trunc, to_char]
+  allowed_functions: [sum, count, min, max, avg, round, coalesce, nullif, date_trunc, to_char, row_number, rank, string_agg]
   parameters_required: [cutoff]
   forbidden: [demo.*, authz.*, audit.*, meta.*, sample_raw*, pg_catalog.*, set_config, current_setting]

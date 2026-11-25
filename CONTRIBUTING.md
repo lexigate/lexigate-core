@@ -17,7 +17,7 @@ and interface contracts. Enterprise plug-ins are not accepted here.
 
 ```
 python -m venv .venv && . .venv/bin/activate
-pip install -e ".[serve,test]"
+pip install -e ".[serve,test,mcp]"
 pytest
 ```
 

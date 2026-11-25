@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 LexiGate contributors
-"""Command line: lexigate scan | validate | demo load | serve | ask."""
+"""Command line: lexigate scan | validate | demo load | serve | ask | mcp."""
 from __future__ import annotations
 
 import argparse
@@ -55,13 +55,20 @@ def _cmd_serve(a) -> int:
     return 0
 
 
+def _cmd_mcp(a) -> int:
+    from lexigate.mcp_server import run
+    run("stdio" if a.transport == "stdio" else "http", host=a.host, port=a.port)
+    return 0
+
+
 def _print_answer(d: dict, as_json: bool) -> None:
     if as_json:
         print(json.dumps(d, ensure_ascii=False, indent=2))
         return
     print(d["answer_ja"])
     if d.get("footer_ja"):
-        print(f"\n{d['footer_ja']}")
+        red = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+        print("\n" + (f"\033[2;31m{d['footer_ja']}\033[0m" if red else d["footer_ja"]))
     if d.get("hints"):
         print("\n次の質問例： " + " / ".join(d["hints"]))
     label = d.get("data_label")
@@ -75,10 +82,11 @@ def _cmd_ask(a) -> int:
         from lexigate import semantic_map as sm
         from lexigate.engine import Engine
         m = sm.load(config.semantic_map_path(a.map))
-        d = Engine(m, config.dsn(a.dsn), config.base_date(m.get("timezone", "Asia/Tokyo"))).ask(question).to_dict()
+        d = Engine(m, config.dsn(a.dsn), config.base_date(m.get("timezone", "Asia/Tokyo")), llm="auto").ask(
+            question, session_id=a.session).to_dict()
     else:
         url = a.url.rstrip("/") + "/v1/ask"
-        req = urllib.request.Request(url, data=json.dumps({"question": question}).encode(),
+        req = urllib.request.Request(url, data=json.dumps({"question": question, "session_id": a.session}).encode(),
                                      headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
@@ -129,7 +137,15 @@ def main(argv: list[str] | None = None) -> int:
     k.add_argument("--local", action="store_true", help="answer in-process against $LEXIGATE_DSN instead of the service")
     k.add_argument("--dsn")
     k.add_argument("--map", help="semantic_map path (with --local)")
+    k.add_argument("--session", default=os.environ.get("LEXIGATE_SESSION", "cli"),
+                   help="session id; follow-ups such as 「確認：さっきの SQL と根拠は？」 refer to the last answer in it")
     k.set_defaults(fn=_cmd_ask)
+
+    mc = sub.add_parser("mcp", help="MCP server for the local demo database (stdio or streamable HTTP)")
+    mc.add_argument("--transport", choices=["stdio", "http"], default=os.environ.get("LEXIGATE_MCP_TRANSPORT", "stdio"))
+    mc.add_argument("--host", default=os.environ.get("LEXIGATE_MCP_HOST", "127.0.0.1"))
+    mc.add_argument("--port", type=int, default=int(os.environ.get("LEXIGATE_MCP_PORT", "8090")))
+    mc.set_defaults(fn=_cmd_mcp)
 
     a = p.parse_args(argv)
     return a.fn(a)

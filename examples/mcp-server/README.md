@@ -1,14 +1,16 @@
-# Example MCP server (skeleton)
+# Example MCP server
 
-This directory is a **placeholder** for the local-only MCP server described in [`spec/mcp.md`](../../spec/mcp.md).
+The MCP server described in [`spec/mcp.md`](../../spec/mcp.md) is implemented in the package as `lexigate mcp` (`src/lexigate/mcp_server.py`). This directory keeps the tool list (`tools.json`) and a thin wrapper script.
 
-**This revision does not execute queries.** The script advertises the tool names and returns a structured `not_implemented` response. That is intentional: we will not pretend the server already talks to a database.
-
-Phase 1 will implement the tools against the fictional dataset in [`../monthend/`](../monthend/) only. A production connection string will be rejected.
+It connects **only** to the local quickstart demo database (the fictional data in [`../monthend/`](../monthend/)); other database hosts and databases without the demo marker are refused. No tool accepts SQL.
 
 ```bash
-python3 lexigate_mcp_server.py --list-tools
-python3 lexigate_mcp_server.py --call list_metrics
+pip install -e ".[mcp]"                                  # from the repository root
+docker compose up -d                                     # demo database (uncomment the db port to reach it from the host)
+export LEXIGATE_DSN=postgresql://lexigate@127.0.0.1:55432/lexigate_demo PGPASSWORD=lexigate-demo LEXIGATE_BASE_DATE=2026-03-10
+lexigate mcp                                             # stdio
+lexigate mcp --transport http --port 8090                # streamable HTTP at http://127.0.0.1:8090/mcp
+python3 examples/mcp-server/lexigate_mcp_server.py --list-tools
 ```
 
-See the contract for how clients should display the path-2 disclaimer, the follow-up hints, and the “show me the SQL” evidence call.
+Claude Desktop and generic client configuration: see the README section “MCP server”. Clients should show `disclaimer` in small red type, show `hints` as follow-up chips, and call `get_evidence` (`kind: "sql_and_rationale"`) only when the user asks for the SQL.

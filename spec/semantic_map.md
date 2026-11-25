@@ -98,7 +98,10 @@ relations:
     columns: { claim_id: text, balance_yen: JPY, ... }
     aggregatable: [balance_yen]
     joins: { sem.attendance_issues_at: claim_id }
+    call: "sem.claim_balance_at(:cutoff)"
 ```
+
+`call` (optional) shows how a query invokes a table function; it is part of the model-visible map used by path 2.
 
 ## `permissions`
 

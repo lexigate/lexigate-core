@@ -23,6 +23,7 @@ class Parsed:
     department: str | None = None            # e.g. 営業部 (scope by attributed department)
     claim_id: str | None = None
     confidence: float = 0.0
+    in_domain: bool = False                  # mentions the business domain (gate for calling a model)
     source: str = "rules"
     notes: list = field(default_factory=list)
 
@@ -38,6 +39,10 @@ def nfkc(t: str | None) -> str:
 OUT_OF_DOMAIN = re.compile(r"給与|給料|賞与|ボーナス|年収|評価|査定|salary|bonus")
 IN_DOMAIN = re.compile(r"精算|出張|未払|未精算|支払|勤怠|打刻|締め|補正|経費|unpaid|outstanding|attendance|expense", re.I)
 WEAK = {"いくら", "残高", "勤怠"}             # only count inside the domain
+CONFIRM_SQL = re.compile(r"(さっき|先ほど|直前|今)の\s*(SQL|クエリ)|SQL\s*(と|や|の)?\s*(根拠|口径|定義)|根拠\s*(と|や)\s*SQL|"
+                         r"show\s+(me\s+)?the\s+sql|刚才的\s*SQL|SQL\s*和依据", re.I)
+BREAKDOWN = re.compile(r"別(?!に)|ごと|毎月|月次推移|推移|ランキング|上位|下位|多い順|少ない順|高い順|平均|比較|最も|一番|トップ|top\s*\d", re.I)
+DOMAIN_EXTRA = re.compile(r"部門|部署|社員|従業員|シフト|休暇|承認|申請|明細|件数|金額|残高|夜勤|日当|宿泊|交通費")
 HELP = re.compile(r"使い方|ヘルプ|help|何ができ|できること", re.I)
 CLAIM = re.compile(r"(?<![A-Z0-9])C\d{4}(?!\d)")
 DATE = re.compile(r"(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*日")
@@ -56,6 +61,7 @@ class RulesNLU:
     def __init__(self, semantic_map: dict):
         self.intent_synonyms = {k: [nfkc(s).lower() for s in v.get("synonyms", [])]
                                 for k, v in (semantic_map.get("intents") or {}).items()}
+        self.terms = [nfkc(k) for k in (semantic_map.get("terms") or {})]
         modes = (semantic_map.get("time") or {}).get("as_of_modes") or {}
         self.prev_month_end = [nfkc(s) for s in (modes.get("previous_month_end") or {}).get("synonyms", [])]
 
@@ -63,11 +69,18 @@ class RulesNLU:
         t = nfkc(text)
         tl = t.lower()
         p = Parsed(question=text, intent=None)
+        if CONFIRM_SQL.search(t):
+            p.intent, p.confidence, p.in_domain = "confirm_sql", 0.95, True
+            return p
         hit = {k: [s for s in v if s in tl] for k, v in self.intent_synonyms.items()}
         domain = bool(IN_DOMAIN.search(t))
+        p.in_domain = domain or bool(DOMAIN_EXTRA.search(t)) or any(k in t for k in self.terms)
+        if BREAKDOWN.search(t):
+            p.notes.append("breakdown")
         if OUT_OF_DOMAIN.search(t) and not re.search(r"精算|出張|経費", t):
             hit = {k: [] for k in hit}
             p.notes.append("out_of_domain")
+            p.in_domain = False
         for k in hit:                      # weak words alone never trigger a query outside the domain
             if hit[k] and not domain and all(s in WEAK for s in hit[k]):
                 hit[k] = []

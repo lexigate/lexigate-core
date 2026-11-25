@@ -2,13 +2,28 @@
 
 This is the public MCP (Model Context Protocol) interface for LexiGate. The goal is that a client (Claude, Cursor, a future Dify tool, or the sample server) can query **catalog-constrained** metrics without sending raw SQL and without receiving raw business rows it did not ask for as an aggregate.
 
-**Status:** this document is the contract. A complete server that talks to the fictional month-end database is a Phase 1 deliverable. The tree at [`examples/mcp-server/`](../examples/mcp-server/) is a skeleton that advertises these tools and returns a structured “not implemented” error for calls that would execute a query.
+**Status (0.2):** implemented by `lexigate mcp` (`src/lexigate/mcp_server.py`, official Python `mcp` SDK; stdio by default, streamable HTTP with `--transport http`). Install with `pip install -e ".[mcp]"`; client configuration is in the README.
 
-The sample server, when implemented, will bind **only** to a local demo database (or the CSV dataset) and must refuse to use a customer connection string.
+The sample server binds **only** to the local quickstart demo database: it refuses a database host that is not local (override list: `LEXIGATE_MCP_ALLOWED_HOSTS`, default `localhost,127.0.0.1,::1,db`) and any database whose schema `demo` lacks the marker comment written by `lexigate demo load`. Path-2 SQL runs as the NOLOGIN role `lexigate_query`, which can only execute the `sem.*` functions.
 
 ## Tools
 
 All tools take JSON arguments and return JSON. Dates use ISO 8601. Money is an integer in the unit declared by the semantic map (for the month-end example, integer yen).
+
+### Implemented tools at a glance
+
+| Tool | Purpose |
+|---|---|
+| `ask` | `{question, session_id?}` → the same answer object as `query_metric`, plus `answer_ja`. Recommended entry point for chat clients. |
+| `list_questions` | Alias of `list_metrics`, with example questions per intent and whether path 2 is enabled (`generated_sql`). |
+| `list_metrics` | See below. |
+| `get_semantic_map` | See below. |
+| `resolve_intent` | See below. |
+| `query_metric` | See below. Path 2 runs only when the server has a model configured (`GEMINI_API_KEY` or `OPENAI_API_KEY`). |
+| `get_evidence` | See below. `session_id` selects the conversation; with no `query_id`, the session’s last answer is used. |
+| `claim_evidence` | `{claim_id, as_of?}` → lines, approval history and settled payments of one claim (demo evidence, no RLS). |
+
+Answers are Japanese (`answer_ja`); a client or host model may translate them. Each answer has one or two `hints`.
 
 ### `list_metrics`
 

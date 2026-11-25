@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import psycopg
@@ -61,6 +62,22 @@ def load(dsn: str, data_dir: Path) -> dict:
         cx.execute((SQL_DIR / "40_semantic.sql").read_text(encoding="utf-8"))
         cx.execute(sql.SQL("COMMENT ON SCHEMA demo IS {}").format(sql.Literal(
                        f"LexiGate quickstart demo data {manifest['data_version']} — {manifest['label']}")))
+        query_role = _setup_query_role(cx)
         cx.execute("ANALYZE")
         cx.commit()
-    return {"data_version": manifest["data_version"], "rows": sum(counts.values()), "tables": len(counts)}
+    return {"data_version": manifest["data_version"], "rows": sum(counts.values()), "tables": len(counts),
+            "query_role": query_role}
+
+
+def _setup_query_role(cx: psycopg.Connection) -> str | None:
+    """Create the low-privilege role used for model-generated SQL. Needs CREATEROLE (the compose user is a
+    superuser). Without it, path 2 stays disabled (fail closed); path 1 is unaffected."""
+    try:
+        with cx.transaction():
+            cx.execute((SQL_DIR / "50_query_role.sql").read_text(encoding="utf-8"))
+            cx.execute("GRANT lexigate_query TO CURRENT_USER")
+        return "lexigate_query"
+    except psycopg.Error as e:
+        print(f"warning: could not set up role lexigate_query ({type(e).__name__}); "
+              "model-generated SQL will stay disabled", file=sys.stderr)
+        return None

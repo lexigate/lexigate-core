@@ -8,7 +8,7 @@ WORKDIR /app
 
 COPY pyproject.toml README.md LICENSE NOTICE ./
 COPY src ./src
-RUN pip install ".[serve]"
+RUN pip install ".[serve,mcp]"
 
 COPY spec ./spec
 COPY examples/monthend ./examples/monthend

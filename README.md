@@ -6,11 +6,11 @@ This repository is the **open core**, licensed under [Apache License 2.0](LICENS
 
 Enterprise capabilities — Microsoft Entra ID row- and column-level security, compliance audit export, the outbound tunnel, the admin console, multi-database routing, and production connectors — live in a **private** repository (`lexigate-ee`) and are not present here.
 
-> **Current status (November 2026, version 0.1):** documentation, the v0 specification, fictional month-end demo data, the `lexigate scan` schema scanner, and a runnable local demo (`docker compose up` + `lexigate ask`, rules-based, no API key). Still **not implemented**: model-generated SQL (path 2), the plugin interfaces, and a working MCP server (the MCP server is a skeleton). The demo has no authentication and no row-level security; it is not a production gateway.
+> **Current status (November 2026, version 0.2):** documentation, the v0 specification, fictional month-end demo data, the `lexigate scan` schema scanner, a runnable local demo (`docker compose up` + `lexigate ask`, no API key needed), an MCP server bound to the demo database (`lexigate mcp`), and optional model-generated SQL (path 2, only when you configure your own Gemini or OpenAI-compatible key). Still **not implemented**: the plugin interfaces as stable APIs. The demo has no authentication and no row-level security; it is not a production gateway.
 
 [日本語 README](README.ja.md) · [中文说明](README.zh.md)
 
-## Quickstart (0.1)
+## Quickstart
 
 Requirements: Docker with Compose v2. No API key is needed: the demo uses rules-based NLU and fixed queries only.
 
@@ -46,8 +46,68 @@ What the demo answers (fixed queries bound to the intents in [`examples/monthend
 | 営業部の未払い出張精算はいくら？ | `unpaid_summary` + scope | Filtered by the department the trip is attributed to |
 
 - The demo "today" is fixed at 2026-03-10 (`LEXIGATE_BASE_DATE`), so 先月末時点 means the end of February 2026. A question without a time uses `time.default_as_of` from the map and the answer says so.
-- Anything else gets a short clarification with suggested questions. Model-generated SQL (path 2) is **not** in 0.1. The engine already has the extension point: an `AnswerPath` added to `Engine.paths` or published under the entry-point group `lexigate.answer_paths`; `Answer.mark_generated()` adds the soft footer and the “show me the SQL” suggestion.
+- Anything else gets a short clarification with suggested questions, unless model-generated SQL is enabled (next section).
 - Local demo only: fictional data, no authentication, and no row-level security (identity and RLS are enterprise plug-ins).
+
+### Model-generated SQL (optional, path 2)
+
+Fixed queries always run first. Only when the rules cannot match a question (for example 「部門別の未払い残高は？」 or 「未払い残高が一番大きい社員は誰？」) and you have configured a model, LexiGate asks the model for one SQL `SELECT`:
+
+```bash
+export GEMINI_API_KEY=...                 # or OPENAI_API_KEY=... (+ LEXIGATE_OPENAI_BASE_URL for any OpenAI-compatible endpoint)
+docker compose up -d --build              # the key is passed through from your shell; nothing is stored
+```
+
+```console
+$ lexigate ask "部門別の未払い残高は？"
+（時点の指定がないため2026年2月末時点で回答）
+2026年2月末時点：部門別未払い出張精算残高
+・開発部：未払い残高合計(円) ¥178,650、精算件数 8、対象人数 6
+・営業部：未払い残高合計(円) ¥87,070、精算件数 6、対象人数 6
+・人事部：未払い残高合計(円) ¥57,170、精算件数 1、対象人数 1
+・経理部：未払い残高合計(円) ¥48,350、精算件数 2、対象人数 2
+
+※ AI が作成した回答です。念のため内容をご確認ください
+
+次の質問例： 先月末時点の未払い出張精算はいくら？ / 勤怠未確定は何名？ / 確認：さっきの SQL と根拠は？
+$ lexigate ask "確認：さっきの SQL と根拠は？"
+直前の回答（AI 作成）の SQL と根拠です。
+【SQL】
+SELECT attributed_department_ja, sum(balance_yen) AS total_unpaid_balance, … FROM sem.claim_balance_at('2026-03-01T00:00:00+09:00') WHERE balance_yen > 0 AND anomaly_code IS NULL GROUP BY … ORDER BY …
+【口径】unpaid_trip_balance：締め時点前に最終承認済みの出張精算について、…（条件：balance_yen > 0 AND anomaly_code IS NULL）
+…
+```
+
+- The model sees the question and the model-visible part of the semantic_map (relations in `sql_guard.allowed_relations`, metrics, terms, rules). It never sees result rows and never writes the answer text; the answer is built from the rows by LexiGate. Titles and column labels come from the model, so they can differ between runs.
+- Guard (`lexigate.sqlguard`, sqlglot): exactly one `SELECT`; no DML / DDL / `COPY` / `SELECT INTO` / locking / `SET`; only allow-listed relations and functions; only the `:cutoff` parameter; wrapped in a `LIMIT`. Rejected SQL is sent back to the model once with the reason.
+- Execution: `READ ONLY` transaction, `SET LOCAL ROLE lexigate_query` (a NOLOGIN role that can only execute the `sem.*` functions and has no access to the raw `demo` tables), `statement_timeout`, an `EXPLAIN` cost ceiling, `search_path = pg_catalog`.
+- Display rules: path-2 answers have `ai_generated: true` and `footer_ja` (render it in small red text; `POST /v1/ask/card` and `/v1/ask/html` do), plus the extra hint 「確認：さっきの SQL と根拠は？」. Asking it in the same `session_id` returns the SQL and the semantic definitions used. Fixed-query answers never get the footer or that hint. SQL is never shown unless asked.
+- Settings: `LEXIGATE_LLM_PROVIDER` (`auto` / `gemini` / `openai` / `none`), `LEXIGATE_GEMINI_MODEL`, `LEXIGATE_OPENAI_MODEL`, `LEXIGATE_OPENAI_BASE_URL`, `LEXIGATE_SQL_MAX_ROWS`, `LEXIGATE_SQL_TIMEOUT_MS`. Without a key, path 2 is off and everything else works the same.
+
+### MCP server
+
+`lexigate mcp` serves the [MCP tool contract](spec/mcp.md) for the **local demo database only**: it refuses a non-local host and any database without the marker that `lexigate demo load` writes. No tool accepts SQL. Tools: `ask`, `list_questions` (= `list_metrics`), `get_semantic_map`, `resolve_intent`, `query_metric`, `claim_evidence`, `get_evidence` (claim evidence, or the SQL and rationale of an AI-generated answer, on request).
+
+Claude Desktop (`claude_desktop_config.json`) or any client that launches stdio servers:
+
+```json
+{
+  "mcpServers": {
+    "lexigate-demo": {
+      "command": "/path/to/lexigate-core/.venv/bin/lexigate",
+      "args": ["mcp"],
+      "env": {
+        "LEXIGATE_DSN": "postgresql://lexigate@127.0.0.1:55432/lexigate_demo",
+        "PGPASSWORD": "lexigate-demo",
+        "LEXIGATE_BASE_DATE": "2026-03-10",
+        "LEXIGATE_SEMANTIC_MAP": "/path/to/lexigate-core/examples/monthend/semantic_map.yaml"
+      }
+    }
+  }
+}
+```
+
+(Install with `pip install -e ".[mcp]"`, and uncomment the `db` port in `docker-compose.yml` so the host can reach the demo database. Add `GEMINI_API_KEY` to `env` to enable path 2.) Clients that speak streamable HTTP can use `docker compose --profile mcp up -d` and connect to `http://127.0.0.1:8090/mcp`, or run `lexigate mcp --transport http --port 8090` yourself.
 
 ### Scan your own PostgreSQL schema
 
@@ -65,7 +125,7 @@ lexigate validate semantic_map.draft.yaml
 export LEXIGATE_DSN=postgresql://user@localhost:5432/lexigate_demo   # a PostgreSQL 14+ database you own; schemas demo and sem are replaced
 export LEXIGATE_BASE_DATE=2026-03-10
 lexigate demo load                    # loads examples/monthend/data (hashes and row counts checked)
-lexigate serve                        # http://127.0.0.1:8080  (POST /v1/ask, GET /healthz, GET /v1/intents)
+lexigate serve                        # http://127.0.0.1:8080  (POST /v1/ask, /v1/ask/card, /v1/ask/html; GET /healthz, /v1/intents)
 lexigate ask "勤怠未確定は何名？"       # or: lexigate ask --local "…" to skip the HTTP service
 ```
 
@@ -79,7 +139,7 @@ Tests: `pip install -e ".[test]" && pytest`. Database tests use `LEXIGATE_TEST_D
 | Schema scanner CLI `lexigate scan` *(0.1)* | Entra ID RLS / CLS mapping |
 | Local Docker Compose + `lexigate ask` demo *(0.1)* | Advanced SQL guardrails, audit export to S3 / SIEM |
 | Plugin interfaces (`AuthProvider`, `SchemaEnricher`, `SQLGuardrail`, `AuditLogger`, `TunnelAdapter`) *(Phase 1)* | Outbound tunnel client, CloudFormation HA, multi-database router |
-| MCP tool contract + a sample server that talks only to the local demo database *(Phase 1)* | Admin console, approval (稟議) flows, ROI report |
+| MCP tool contract + a sample server that talks only to the local demo database (`lexigate mcp`) *(0.2)* | Admin console, approval (稟議) flows, ROI report |
 | Fictional month-end example dataset (this revision) | Offline signed license (no phone-home relay required) |
 
 The core is designed as a library with a plugin registry (`entry_points`). Enterprise builds depend on a published core version and inject plug-ins. There is no `if is_enterprise` branch in core.
@@ -138,14 +198,14 @@ LexiGate answers a question in one of two ways:
 - [`spec/semantic_map.schema.json`](spec/semantic_map.schema.json) — JSON Schema for the same document (YAML or JSON).
 - [`spec/mcp.md`](spec/mcp.md) — MCP tool contract (`resolve_intent`, `query_metric`, `get_evidence`, …).
 - [`examples/monthend/`](examples/monthend/) — a fictional Japanese month-end close dataset and an example `semantic_map.yaml`. All people and companies are fictitious.
-- [`examples/mcp-server/`](examples/mcp-server/) — a **skeleton** MCP server that advertises the tools and clearly reports that query execution is not implemented yet.
+- [`examples/mcp-server/`](examples/mcp-server/) — tool list and a thin wrapper for `lexigate mcp` (the server itself is `src/lexigate/mcp_server.py`).
 
 ## Roadmap
 
 | Phase | What | Status in this revision |
 |---|---|---|
 | 0 | Organization profile, architecture docs, `semantic_map` v0, fictional demo data | **Published here** |
-| 1 | `lexigate scan` (PostgreSQL metadata → draft map), Docker Compose + `lexigate ask`, plugin interfaces, a local MCP server bound to the demo database | **In progress.** 0.1 ships `lexigate scan` and Docker Compose + `lexigate ask` (rules, fixed queries). Plugin interfaces, path 2 and the MCP server are not done yet |
+| 1 | `lexigate scan` (PostgreSQL metadata → draft map), Docker Compose + `lexigate ask`, plugin interfaces, a local MCP server bound to the demo database | **Mostly done.** 0.1: `lexigate scan`, Docker Compose + `lexigate ask`. 0.2: `lexigate mcp`, optional path 2 (guarded model-generated SQL). Plugin interfaces are not published as stable APIs yet |
 | 2+ | Enterprise plug-ins in `lexigate-ee` as real customer needs appear (Entra, Mode B tunnel, admin console, MySQL scanner, …) | Private, not scheduled as open source |
 
 ## License, trademark, and contributing

@@ -94,7 +94,7 @@ Large language models are **bring your own model** (for example Amazon Bedrock o
 
 ## Plugin-shaped core (Phase 1)
 
-The intended library boundaries (to be implemented in Phase 1, not present as code in this revision):
+The intended library boundaries (Phase 1). In 0.1 only two pieces exist as code: the scanner (`lexigate.scanner`, the core default behind `SchemaEnricher`) and the catalog-driven rules NLU (`lexigate.nlu.RulesNLU`). The answer engine also exposes an `AnswerPath` extension point (entry-point group `lexigate.answer_paths`) for the future path 2. The interfaces in the table are not yet published as stable APIs:
 
 | Interface | Core default | Enterprise plug-in (private) |
 |---|---|---|
@@ -111,6 +111,8 @@ Enterprise code depends on core; core never depends on enterprise. Plug-ins are 
 
 - A runnable gateway, Teams bot, Slack adapter, or Copilot package.
 - Database RLS policies, production SQL functions, or NLU prompt chains.
-- The scanner CLI, Docker Compose stack, or a working MCP server (skeleton only).
+- A working MCP server (skeleton only), model-generated SQL (path 2), or the plugin interfaces below.
+
+Since 0.1 the repository does contain `lexigate scan`, a demo-only ask service with fixed queries and rules-based NLU, and demo semantic functions (schema `sem`, no RLS) for the fictional dataset. See the README Quickstart.
 
 Those items are either Phase 1 work in this repository or private enterprise / demo work. Please treat anything that looks like a complete product in this revision as a documentation error and file an issue.

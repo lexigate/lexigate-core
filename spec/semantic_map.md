@@ -23,6 +23,7 @@ It is not a connection string, not an IAM policy, and not a substitute for datab
 | `timezone` | string | yes | IANA time zone used for business dates, e.g. `Asia/Tokyo`. |
 | `currency` | string | no | ISO currency, e.g. `JPY`. |
 | `money` | string | no | Representation. The month-end example uses `integer_yen` (never a float). |
+| `review` | string or object | no | Review state: `draft`, `needs_review` or `reviewed`, or `{status, inferred, note}`. See [Drafts written by `lexigate scan`](#drafts-written-by-lexigate-scan). |
 
 ## `time`
 
@@ -40,7 +41,7 @@ time:
 
 Recommended as-of convention (used in the month-end example): “as of date X” is the exclusive upper bound of **00:00 in the map timezone on the day after X**. “As of last month-end” is 00:00 on the first day of the month that contains the server base date.
 
-If a question needs an as-of value and the user did not give one, the gateway should **clarify**, not guess.
+If a question needs an as-of value and the user did not give one, the gateway should **clarify**, not guess, unless the map sets `time.default_as_of` (for example `previous_month_end`). With a default, the gateway may use it, and the answer must say which as-of it assumed.
 
 ## `intents`
 
@@ -129,6 +130,24 @@ sql_guard:
 ```
 
 A previous internal name for this block was `nl2sql_guard`. Validators should accept that alias in v0 and treat it as `sql_guard`.
+
+## Drafts written by `lexigate scan`
+
+`lexigate scan` reads PostgreSQL metadata and writes a draft map. The draft is a valid v0 document, but it is **not** ready for a gateway until a person reviews it. It uses these optional fields:
+
+| Where | Field | Meaning |
+|---|---|---|
+| document | `review: {status: draft, note}` | The whole map is a draft. Change to `reviewed` after review. |
+| relation, metric, `sql_guard` | `review: {status: needs_review, inferred: [...]}` | The item, or the listed parts of it, were inferred from metadata. |
+| term | `review: needs_review` | Term candidate taken from a table or column comment. `candidates` lists every column with the same leading phrase. |
+| relation | `kind` | `table`, `view` or `materialized_view`. |
+| relation | `description` | Table comment. |
+| relation | `column_info` | Per column: `type`, `nullable`, `description` (comment), `primary_key`, `references`, `allowed_values` (from `CHECK … IN` or an enum type), `sample_values` (distinct values of a low-cardinality column), `semantic_type` (`identifier`, `money`, `number`, `date`, `timestamp`, `flag`, `category`, `text`; inferred). |
+| relation | `row_estimate` | Planner estimate, if the table was analyzed. |
+
+`columns` keeps the simple `name: type` form shown above, so a reviewed draft and a hand-written map look the same. Inferred defaults are conservative: `intents` is empty (questions need human wording), metric candidates are only plain sums over money-like columns without business filters, and `sql_guard.allowed_relations` is empty, so nothing is allowed for model-generated SQL until someone lists it.
+
+A reviewer typically: confirms grains and joins; deletes or rewrites metric candidates and adds the real filters and cutoffs; writes intents and synonyms; sets `time` (cutoff rule, `as_of_modes`, optional `default_as_of`); adds `permissions`; chooses `sql_guard.allowed_relations` (usually semantic views, not raw tables); removes the `review` markers and bumps `semantic_version`.
 
 ## Versioning
 

@@ -66,6 +66,10 @@
         },
         "base_date_source": {
           "type": "string"
+        },
+        "default_as_of": {
+          "type": "string",
+          "description": "Optional as-of mode used when a question gives none. The answer must state the assumed as-of. Without it, the gateway clarifies."
         }
       }
     },
@@ -100,6 +104,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "review": {
+            "$ref": "#/$defs/review"
           }
         }
       }
@@ -141,12 +148,62 @@
           },
           "unit": {
             "type": "string"
+          },
+          "review": {
+            "$ref": "#/$defs/review"
           }
         }
       }
     },
     "relations": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grain": {
+            "type": "string"
+          },
+          "key": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "columns": {
+            "type": "object"
+          },
+          "column_info": {
+            "type": "object"
+          },
+          "date_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "aggregatable": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "joins": {
+            "type": "object"
+          },
+          "review": {
+            "$ref": "#/$defs/review"
+          }
+        }
+      }
     },
     "permissions": {
       "type": "object"
@@ -163,6 +220,10 @@
     "nl2sql_guard": {
       "$ref": "#/$defs/sql_guard",
       "description": "v0 alias for sql_guard"
+    },
+    "review": {
+      "$ref": "#/$defs/review",
+      "description": "Document-level review state. lexigate scan writes status: draft."
     }
   },
   "$defs": {
@@ -195,8 +256,48 @@
           "items": {
             "type": "string"
           }
+        },
+        "review": {
+          "$ref": "#/$defs/review"
         }
       }
+    },
+    "review": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "draft",
+            "needs_review",
+            "reviewed"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "needs_review",
+                "reviewed"
+              ]
+            },
+            "inferred": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        }
+      ]
     }
   }
 }

@@ -7,6 +7,7 @@ data_label_ja: デモデータ
 timezone: Asia/Tokyo
 currency: JPY
 money: integer_yen            # never floating point
+review: {status: reviewed, note: Hand-written and reviewed by the maintainers for the fictional demo dataset.}
 
 time:
   cutoff_rule_ja: 「先月末時点」＝基準日が属するJST月の月初0:00（排他的上限）。「X日時点」＝X日の翌日0:00 JST（排他的上限）。事象時刻はUTC保存、業務日付はJST。
@@ -15,6 +16,7 @@ time:
     month_end:          {params: [month], synonyms: [X月末時点, X月末], example: {month: "2026-01"}}
     date:               {params: [date],  synonyms: [X月X日時点, その日時点, 当時, 履歴], example: {date: "2026-02-10"}}
   base_date_source: server            # fixed demo date via LEXIGATE_BASE_DATE, never from the client
+  default_as_of: previous_month_end   # questions without a time use 先月末時点; the answer states the assumption
 
 intents:
   unpaid_summary:
@@ -81,6 +83,11 @@ relations:   # semantic surface; each entry lists grain, key, date fields and al
               evidence_id: text, claim_visible: bool, claim_unpaid: bool}
     aggregatable: []
     joins: {sem.claim_balance_at: claim_id}
+  sem.claim_evidence_at:   # (claim_id, cutoff) -> lines, approval events and settled payments of one claim
+    grain: claim x evidence item
+    key: [kind, seq]
+    columns: {kind: text, seq: int, occurred_at: timestamptz, label_ja: text, amount_yen: JPY, detail: jsonb}
+    note: evidence for claim_detail (CLM-<claim_id>:lines / :approvals / :payments)
   sem.workday_status:   {grain: employee x work_date, key: [employee_id, work_date], note: status only (no clock times)}
   sem.clock_workdays:   {grain: clock event, key: [clock_event_id], note: night shift -> start work date}
 

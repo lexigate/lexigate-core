@@ -1,8 +1,8 @@
 # Contributing to LexiGate Core
 
 Thank you for considering a contribution. This repository is the **open core**:
-specifications, documentation, the upcoming scanner / local demo CLI, and
-interface contracts. Enterprise plug-ins are not accepted here.
+specifications, documentation, the scanner and local demo CLI (`lexigate`),
+and interface contracts. Enterprise plug-ins are not accepted here.
 
 ## Before you start
 
@@ -12,6 +12,18 @@ interface contracts. Enterprise plug-ins are not accepted here.
 - Please do not send product code that generates unconstrained SQL, or that
   phones home to a license server. See the architecture document for the
   dual-path and Mode A defaults.
+
+## Development setup
+
+```
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[serve,test]"
+pytest
+```
+
+Database tests use `LEXIGATE_TEST_DSN` (the named database's `demo` and `sem` schemas are replaced), or start a
+throwaway cluster with `initdb` when PostgreSQL is installed locally; otherwise they are skipped. Source files start
+with `SPDX-License-Identifier: Apache-2.0`.
 
 ## Developer Certificate of Origin (DCO)
 

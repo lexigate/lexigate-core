@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 LexiGate contributors
+#
+# Quickstart:  docker compose up --build
+# Then:        curl -s localhost:8080/v1/ask -H 'Content-Type: application/json' -d '{"question":"未払い出張精算はいくら？"}'
+#   or:        pip install -e . && lexigate ask "未払い出張精算はいくら？"
+#
+# Local demo only. The database contains fictional data, the password below is a throwaway demo value,
+# and the ask service has no authentication. Do not point it at a real database.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: lexigate_demo
+      POSTGRES_USER: lexigate
+      POSTGRES_PASSWORD: lexigate-demo
+      TZ: Asia/Tokyo
+      PGTZ: Asia/Tokyo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexigate -d lexigate_demo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - lexigate-pgdata:/var/lib/postgresql/data
+    # Uncomment to run `lexigate scan` from the host against the demo database:
+    # ports: ["127.0.0.1:55432:5432"]
+
+  ask:
+    build: .
+    image: lexigate-core:0.1.0
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      LEXIGATE_DSN: postgresql://lexigate@db:5432/lexigate_demo
+      PGPASSWORD: lexigate-demo             # throwaway demo value (same as POSTGRES_PASSWORD above)
+      LEXIGATE_BASE_DATE: "2026-03-10"      # fixed demo "today" so 先月末時点 = end of February 2026
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  lexigate-pgdata:

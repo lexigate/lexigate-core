@@ -49,4 +49,4 @@ The denied-access message used in the Japanese demo, 「この情報へのアク
 
 ## What we do not claim in this revision
 
-This repository does not yet ship a hardened runtime. The principles above are the design the Phase 1 code and the enterprise edition are expected to follow. Please judge the running month-end demo (private) and future releases against this document, and open a private report if a shipped artifact falls short.
+This repository does not yet ship a hardened runtime. The 0.1 quickstart ask service is a local demo: it has no authentication and no row-level security, and it should only ever point at the fictional demo database. `lexigate scan` opens a read-only session, but run it with a read-only database role anyway. The principles above are the design the Phase 1 code and the enterprise edition are expected to follow. Please judge the running month-end demo (private) and future releases against this document, and open a private report if a shipped artifact falls short.

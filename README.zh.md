@@ -2,21 +2,82 @@
 
 **LexiGate** 是连接 Microsoft Teams（及其他聊天前端）与 AWS 业务数据库（RDS / Aurora，PostgreSQL 与 MySQL）的语义网关。人们用日常语言提问，回答来自受治理的语义层，而不是对生产库结构的无约束闲聊。
 
-本仓库是 **Open-Core 的公开部分**，采用 [Apache License 2.0](LICENSE)。内容是公开契约：`semantic_map` 规范、架构与安全文档、虚构演示数据，以及（即将提供的）结构扫描工具和本地命令行演示。
+本仓库是 **Open-Core 的公开部分**，采用 [Apache License 2.0](LICENSE)。内容是公开契约：`semantic_map` 规范、架构与安全文档、虚构演示数据，PostgreSQL 结构扫描工具（`lexigate scan`），以及带 `lexigate ask` 的本地 Docker Compose 演示。
 
 企业能力——Microsoft Entra ID 行/列级权限、合规审计导出、出站隧道、管理后台、多库路由和生产级连接器——放在**私有**仓库 `lexigate-ee`，不会出现在这里。
 
-> **当前状态（2026 年 11 月）：** 本次发布是文档、v0 规范、虚构的月结演示数据，以及本地 MCP 服务器的骨架。扫描命令行、`docker compose` 演示、`lexigate ask` 和可用的 MCP 服务器**属于 Phase 1 计划，本修订中尚未实现**。现在克隆本仓库还不能得到可运行的产品。
+> **当前状态（2026 年 11 月，版本 0.1）：** 文档、v0 规范、虚构的月结演示数据、`lexigate scan` 结构扫描工具，以及可运行的本地演示（`docker compose up` + `lexigate ask`，规则式，不需要 API key）。**尚未实现**：模型生成 SQL（路径 2）、插件接口、可用的 MCP 服务器（MCP 服务器仍是骨架）。演示没有认证，也没有行级权限，不是生产网关。
 
 [English README](README.md) · [日本語 README](README.ja.md)
+
+## 快速上手（0.1）
+
+需要：Docker 与 Compose v2。不需要任何 API key：演示只用规则式 NLU 和固定查询。
+
+```bash
+git clone https://github.com/lexigate/lexigate-core && cd lexigate-core
+docker compose up --build -d          # PostgreSQL 17 + 虚构月结数据 + 问答服务（127.0.0.1:8080）
+curl -s localhost:8080/v1/ask -H 'Content-Type: application/json' -d '{"question":"未払い出張精算はいくら？"}'
+```
+
+也可以用命令行（Python 3.10+）：
+
+```console
+$ python -m venv .venv && . .venv/bin/activate && pip install -e .
+$ lexigate ask "未払い出張精算はいくら？"
+（時点の指定がないため2026年2月末時点で回答）
+2026年2月末時点で承認済み・未払いの出張精算は ¥371,240（17件・15名）です。
+データ異常 C1011（超過支払）、C1012（明細なし） は合計から除外し、財務の確認対象です。
+
+次の質問例： そのうち勤怠未確定は何名？ / C2016 の明細を見せて
+$ lexigate ask "勤怠未確定は何名？"
+（時点の指定がないため2026年2月末時点で回答）
+2026年2月末時点の未払い出張精算のうち、勤怠未確定は 2名・2件（対象残高 ¥41,000）、確認事項 4件（人事 2件、本人 1件、部門承認者 1件）です。
+```
+
+演示能回答的问题（固定查询，绑定 [`examples/monthend/semantic_map.yaml`](examples/monthend/semantic_map.yaml) 中的意图）：
+
+| 问法示例 | 意图 | 回答内容 |
+|---|---|---|
+| 未払い出張精算はいくら？ / 1月末時点の未払いは？ / 2月10日時点の未払い残高 | `unpaid_summary` | 已审批未付款的出差报销余额、件数与人数、数据异常 |
+| 勤怠未確定は何名？ / 誰が確認すべき？ | `attendance_unconfirmed` | 未付款报销中考勤未确定的日期，以及每条该由谁确认 |
+| 先月末時点の未払いはいくら？そのうち勤怠未確定は？ | 两者 | 余额 + 考勤明细 |
+| C1002 の明細を見せて | `claim_detail` | 单张报销单的明细、审批记录、已结算付款 |
+| 営業部の未払い出張精算はいくら？ | `unpaid_summary` + 范围 | 按出差归属部门筛选 |
+
+- 演示的「今天」固定为 2026-03-10（`LEXIGATE_BASE_DATE`），所以「先月末時点」指 2026 年 2 月末。问题没写时点时，使用语义图里的 `time.default_as_of`，并在回答里写明。
+- 其他问题会得到简短的澄清和问法提示。模型生成 SQL（路径 2）**不在 0.1 中**，但扩展点已经留好：把 `AnswerPath` 加到 `Engine.paths`，或以 entry-point 组 `lexigate.answer_paths` 发布插件；`Answer.mark_generated()` 会加上底部的温和提示和「查看 SQL 与依据」的问法提示。
+- 仅限本地演示：虚构数据、无认证、无行级权限（身份与 RLS 属于企业版插件）。
+
+### 扫描你自己的 PostgreSQL
+
+```bash
+pip install -e .
+lexigate scan --dsn postgresql://readonly_user@db-host:5432/app --schema public -o semantic_map.draft.yaml
+lexigate validate semantic_map.draft.yaml
+```
+
+`lexigate scan` 离线运行（不用模型），使用只读会话。读取表、视图、列、类型、主键/唯一键/外键、`CHECK (… IN …)` 取值、枚举和注释，并列出低基数文本/布尔列的取值。看起来像姓名、联系方式、ID 或自由文本的列一律不采样；`--no-samples` 只读元数据。输出 semantic_map v0 **草稿**：关系的粒度、键、关联、日期字段、可聚合列；从金额列和注释得到的指标、术语候选；`sql_guard.allowed_relations` 为空。所有推断项都标 `review: needs_review`（见 [spec/semantic_map.md](spec/semantic_map.md#drafts-written-by-lexigate-scan)）。想在演示库上试：取消 `docker-compose.yml` 中 `db` 服务 `ports` 那一行的注释，然后用 `--schema demo` 扫描 `postgresql://lexigate@127.0.0.1:55432/lexigate_demo`（`PGPASSWORD=lexigate-demo`）。
+
+### 不用 Docker
+
+```bash
+export LEXIGATE_DSN=postgresql://user@localhost:5432/lexigate_demo   # 你自己的 PostgreSQL 14+ 数据库；demo 和 sem 两个 schema 会被重建
+export LEXIGATE_BASE_DATE=2026-03-10
+lexigate demo load                    # 载入 examples/monthend/data（校验哈希和行数）
+lexigate serve                        # http://127.0.0.1:8080（POST /v1/ask、GET /healthz、GET /v1/intents）
+lexigate ask "勤怠未確定は何名？"       # 或 lexigate ask --local "…" 不经 HTTP 服务
+```
+
+测试：`pip install -e ".[test]" && pytest`。数据库测试使用 `LEXIGATE_TEST_DSN`；本机装有 PostgreSQL 时会用 `initdb` 临时起一个实例。
 
 ## Open-Core 模型
 
 | 公开（`lexigate-core`，Apache 2.0） | 私有（`lexigate-ee`，商业闭源） |
 |---|---|
 | `semantic_map.yaml` 规范与 JSON Schema | Excel《テーブル定義書》解析、查询日志挖矿、罗马音增强 |
-| 结构扫描 CLI（*Phase 1*） | Entra ID 行/列级权限映射 |
-| 本地 Docker Compose + `lexigate ask` 演示（*Phase 1*） | 高级 SQL 防护栏、审计导出到 S3 / SIEM |
+| 结构扫描 CLI `lexigate scan`（*0.1*） | Entra ID 行/列级权限映射 |
+| 本地 Docker Compose + `lexigate ask` 演示（*0.1*） | 高级 SQL 防护栏、审计导出到 S3 / SIEM |
 | 插件接口（`AuthProvider`、`SchemaEnricher`、`SQLGuardrail`、`AuditLogger`、`TunnelAdapter`）（*Phase 1*） | 出站隧道客户端、CloudFormation 高可用、多库路由 |
 | MCP 工具契约 + 只连本地演示库的示例服务器（*Phase 1*） | 管理后台、稟議审批、ROI 报告 |
 | 虚构月结示例数据集（本修订已包含） | 离线签名许可（不必依赖中继心跳） |
@@ -84,7 +145,7 @@ LexiGate 用两种方式回答问题：
 | 阶段 | 内容 | 本修订中的状态 |
 |---|---|---|
 | 0 | 组织简介、架构文档、`semantic_map` v0、虚构演示数据 | **已发布于本仓库** |
-| 1 | `lexigate scan`（PostgreSQL 元数据 → 草稿图）、Docker Compose + `lexigate ask`、插件接口、只连演示库的本地 MCP 服务器 | **即将开始，本修订尚未包含** |
+| 1 | `lexigate scan`（PostgreSQL 元数据 → 草稿图）、Docker Compose + `lexigate ask`、插件接口、只连演示库的本地 MCP 服务器 | **进行中。** 0.1 已包含 `lexigate scan` 和 Docker Compose + `lexigate ask`（规则、固定查询）；插件接口、路径 2 和 MCP 服务器尚未完成 |
 | 2+ | 按真实需求在 `lexigate-ee` 中实现企业插件（Entra、模式 B 隧道、管理后台、MySQL 扫描等） | 私有，不开源排期 |
 
 ## 许可、商标与贡献
